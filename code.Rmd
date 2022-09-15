@@ -1,0 +1,280 @@
+---
+title: "IST 707 Final Code"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+ 
+```{r}
+library(readr)
+library(tidyverse)
+library(caret)
+library(stringr)
+```
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+salaries <- read_csv("salaries.txt")
+general <- read_csv("general_stats.txt")
+advanced <- read_csv("advanced_stats.txt")
+```
+ 
+#cleanup
+```{r}
+#cleaning up salary table
+
+names(salaries) <- salaries[1,]
+
+salaries <- salaries %>% select("Player", "2021-22", "2022-23")
+
+salaries <- salaries[-1,]
+
+salaries
+```
+
+```{r}
+#joining the tables
+
+data <- inner_join(x = salaries, y = general, by = "Player")
+
+data <- inner_join(x = data, y = advanced, by = "Player")
+```
+
+```{r}
+#creating data table that still has name
+
+name_data <- data %>% select(-c(Rk.x, Tm.x, G.x, GS, Rk.y, Tm.y, Pos.y, Pos.x, Age.y, G.y, MP.y,
+                           "ORB%", "DRB%", "TRB%", "AST%", "STL%", "BLK%", "TOV%", "...20", "OWS", "DWS", "WS",
+                           "...25","OBPM","DBPM","BPM"))
+```
+
+
+```{r}
+#removing unwanted columns
+
+data <- data %>% select(-c(Rk.x, Tm.x, G.x, GS, Rk.y, Tm.y, Pos.y, Pos.x, Age.y, G.y, MP.y,
+                           "ORB%", "DRB%", "TRB%", "AST%", "STL%", "BLK%", "TOV%", "...20", "OWS", "DWS", "WS",
+                           "...25","OBPM","DBPM","BPM", "Player"))
+```
+
+
+```{r}
+#making free agent table
+free_agents <- salaries
+free_agents <- free_agents %>% filter(is.na(`2022-23`)) %>% 
+  select(Player) %>% unique() %>% na.omit()
+
+free_agents <- left_join(x = free_agents, y = name_data, by = "Player") %>% 
+  select(-`2022-23`) %>% unique() %>% na.omit(FG)
+```
+
+```{r}
+#removong dollar sign from free agent table and making numeric
+
+names(free_agents)[2] <- "salary"
+
+free_agents <- free_agents %>% mutate(salary = str_sub(string = salary, start = 2, end = str_length(salary)))
+
+free_agents$salary <- as.numeric(free_agents$salary)
+
+str(free_agents)
+```
+
+
+```{r}
+#pre processing 
+names(data)[1] <- "salary"
+
+data <- data %>% mutate(salary = str_sub(string = salary, start = 2, end = str_length(salary)))
+
+data$salary <- as.numeric(data$salary)
+
+str(data)
+```
+
+```{r}
+data <- data %>% drop_na(salary) %>% select(-`2022-23`)
+
+#make the rest na into 0
+
+data[is.na(data)] <- 0
+```
+
+##Making buckets
+```{r}
+# dataBuckets <- data$salary %>% cut(breaks = seq(from = 0, to = 48000000, by = 4000000))
+# 
+# data2 <- data
+# 
+# data2$salary <- dataBuckets
+# 
+# levels(data2$salary) <- c('0-4mil', '4mil-8mil', '8mil-12mil', 
+#                           '12mil-16mil', '16mil-20mil' , '20mil-24mil', '24mil-28mil', 
+#                           '28mil-32mil', '32mil-36mil' , '36mil-40mil' , '40mil-44mil' , 
+#                           '44mil-48mil' )
+```
+
+##BUILDING MODEL
+
+```{r}
+set.seed(40)
+# 
+# index <- sample(x = nrow(data), size = floor(0.75*nrow(data)))
+# 
+# train <- data[index,]
+# 
+# test <- data[-index,]
+```
+
+
+```{r}
+#using non free agents as train, and making buckets
+
+data3 <- name_data %>% subset(Player %in% free_agents$Player == FALSE) %>% unique() %>% 
+  select(-c(Player, `2022-23`))
+
+names(data3)[1] <- "salary"
+
+data3 <- data3 %>% mutate(salary = str_sub(string = salary, start = 2, end = str_length(salary)))
+
+data3$salary <- as.numeric(data3$salary)
+
+dataBuckets3 <- data3$salary %>% cut(breaks = seq(from = 0, to = 48000000, by = 4000000))
+
+data3$salary <- dataBuckets3
+
+levels(data3$salary) <- c('0-4mil', '4mil-8mil', '8mil-12mil', 
+                          '12mil-16mil', '16mil-20mil' , '20mil-24mil', '24mil-28mil', 
+                          '28mil-32mil', '32mil-36mil' , '36mil-40mil' , '40mil-44mil' , 
+                          '44mil-48mil' )
+
+data3 <- data3 %>% na.omit(salary)
+```
+
+```{r}
+#making free agents train data
+
+# free_agent_names <- free_agents$Player
+# 
+# free_agents <- free_agents %>% select(-Player)
+
+freeBuckets3 <- free_agents$salary %>% cut(breaks = seq(from = 0, to = 48000000, by = 4000000))
+
+free_agents$salary <- freeBuckets3
+
+levels(free_agents$salary) <- c('0-4mil', '4mil-8mil', '8mil-12mil', 
+                          '12mil-16mil', '16mil-20mil' , '20mil-24mil', '24mil-28mil', 
+                          '28mil-32mil', '32mil-36mil' , '36mil-40mil' , '40mil-44mil' , 
+                          '44mil-48mil' )
+
+```
+
+
+
+##RF Model with integers as opposed to classification
+# ```{r}
+# control <- trainControl(method='repeatedcv', 
+#                         number=10, 
+#                         repeats=3)
+# ```
+# 
+# ```{r}
+# rf_model <- train(salary~.,
+#                       data=train,
+#                       method='rf',
+#                       metric='RMSE',
+#                       trControl=control)
+# 
+# write_rds(rf_model, "rf_model.rds")
+# ```
+# 
+# ```{r}
+# #prediction
+# preds <- predict(rf_model, test)
+# ```
+# 
+# ```{r}
+# new <- data.frame(preds, test$salary)
+# new
+# ```
+# 
+# ```{r}
+# rf_model
+# ```
+This code did not end up telling me much, so I will not include it in my writeup. It is also using random train and test data in a 75% splits, as opposed to using the free agents as the test data.
+
+
+## Building main model with buckets
+
+```{r}
+set.seed(50)
+
+# index <- sample(x = nrow(data2), size = floor(0.75*nrow(data2)))
+# 
+# train2 <- data2[index,]
+# 
+# test2 <- data2[-index,]
+```
+
+```{r}
+#went up from 51 to 61 with tuning
+tuneGrid <- expand.grid(.mtry = (1:5))
+```
+
+
+```{r}
+rf_model2 <- train(salary~.,
+                      data=data3,
+                      method='rf',
+                      metric='Accuracy',
+                      trControl=control,
+                      tuneGrid = tuneGrid)
+
+write_rds(rf_model2, "rf_model2.rds")
+```
+
+
+##Prediction
+```{r}
+#prediction
+
+preds2 <- predict(rf_model2, free_agents)
+```
+
+```{r}
+confusionMatrix(preds2, free_agents$salary)
+```
+
+```{r}
+free_agent_names <- data.frame(free_agent_names)
+free_agent_predictions <- cbind(preds2, free_agents$salary, free_agent_names)
+```
+
+
+### RUNNING SVM MODEL
+
+```{r}
+svm_model <- train(salary~.,
+                      data=data3,
+                      method='svmLinear',
+                      metric='Accuracy',
+                      trControl=control,
+                      preProcess = c("center","scale"))
+```
+
+#SVM predictions
+
+
+```{r}
+#prediction
+
+svm_preds <- predict(svm_model, free_agents)
+```
+
+```{r}
+confusionMatrix(svm_preds, free_agents$salary)
+```
+
+
